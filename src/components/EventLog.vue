@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, nextTick } from 'vue'
+import type { LogCategory } from '@/types/game'
 import type { LogEntry } from '@/types/game'
 
 interface Props {
@@ -10,33 +11,119 @@ const props = defineProps<Props>()
 
 const logContainer = ref<HTMLElement | null>(null)
 
-function getLogColor(type: LogEntry['type']): string {
-  switch (type) {
-    case 'good':
-      return 'text-green-400'
-    case 'bad':
-      return 'text-red-400'
-    case 'system':
-      return 'text-purple-400'
+function getLogColor(category: LogCategory): string {
+  switch (category) {
+    case 'success':
+      return 'text-danger-safe'
+    case 'info':
+      return 'text-blue-400'
+    case 'warning':
+      return 'text-danger-warning'
+    case 'danger':
+      return 'text-danger-danger'
+    case 'action':
+      return 'text-gray-300'
     case 'event':
       return 'text-yellow-400'
+    case 'system':
+      return 'text-purple-400'
     default:
       return 'text-gray-300'
   }
 }
 
-function getLogIcon(type: LogEntry['type']): string {
-  switch (type) {
-    case 'good':
-      return '✨'
-    case 'bad':
-      return '⚠️'
+function getLogBgColor(category: LogCategory): string {
+  switch (category) {
+    case 'success':
+      return 'bg-danger-safe-bg'
+    case 'info':
+      return 'bg-blue-500/10'
+    case 'warning':
+      return 'bg-danger-warning-bg'
+    case 'danger':
+      return 'bg-danger-danger-bg'
+    case 'action':
+      return 'bg-gray-700/20'
+    case 'event':
+      return 'bg-yellow-500/10'
     case 'system':
-      return '📢'
+      return 'bg-purple-500/10'
+    default:
+      return 'bg-transparent'
+  }
+}
+
+function getLogBorderColor(category: LogCategory): string {
+  switch (category) {
+    case 'success':
+      return 'border-danger-safe/30'
+    case 'info':
+      return 'border-blue-500/30'
+    case 'warning':
+      return 'border-danger-warning/40'
+    case 'danger':
+      return 'border-danger-danger/50'
+    case 'action':
+      return 'border-gray-600/30'
+    case 'event':
+      return 'border-yellow-500/30'
+    case 'system':
+      return 'border-purple-500/30'
+    default:
+      return 'border-transparent'
+  }
+}
+
+function getLogIcon(category: LogCategory): string {
+  switch (category) {
+    case 'success':
+      return '✅'
+    case 'info':
+      return 'ℹ️'
+    case 'warning':
+      return '⚠️'
+    case 'danger':
+      return '🚨'
+    case 'action':
+      return '⚡'
     case 'event':
       return '🎲'
+    case 'system':
+      return '📢'
     default:
       return '▶️'
+  }
+}
+
+function getLogLabel(category: LogCategory): string {
+  switch (category) {
+    case 'success':
+      return '成功'
+    case 'info':
+      return '信息'
+    case 'warning':
+      return '警告'
+    case 'danger':
+      return '危险'
+    case 'action':
+      return '行动'
+    case 'event':
+      return '事件'
+    case 'system':
+      return '系统'
+    default:
+      return '日志'
+  }
+}
+
+function getLogAnimation(category: LogCategory): string {
+  switch (category) {
+    case 'danger':
+      return 'animate-pulse-danger'
+    case 'warning':
+      return 'animate-pulse-warning'
+    default:
+      return ''
   }
 }
 
@@ -65,10 +152,26 @@ watch(
       <div
         v-for="log in logs"
         :key="log.id"
-        :class="[getLogColor(log.type), 'animate-slide-up text-sm leading-relaxed flex items-start gap-2']"
+        :class="[
+          'animate-slide-up text-sm leading-relaxed flex items-start gap-2 rounded-lg px-3 py-2 border',
+          getLogColor(log.category),
+          getLogBgColor(log.category),
+          getLogBorderColor(log.category),
+          getLogAnimation(log.category),
+        ]"
       >
-        <span class="flex-shrink-0">{{ getLogIcon(log.type) }}</span>
-        <span>{{ log.text }}</span>
+        <span class="flex-shrink-0">{{ getLogIcon(log.category) }}</span>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-0.5">
+            <span :class="[getLogColor(log.category), 'text-xs font-bold uppercase tracking-wide opacity-80']">
+              {{ getLogLabel(log.category) }}
+            </span>
+            <span class="text-gray-500 text-xs">
+              第 {{ log.turn }} 回合
+            </span>
+          </div>
+          <span class="break-words">{{ log.text }}</span>
+        </div>
       </div>
       <div v-if="logs.length === 0" class="text-gray-500 text-sm text-center py-8">
         暂无日志...

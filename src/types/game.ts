@@ -1,3 +1,7 @@
+export type DangerLevel = 'safe' | 'caution' | 'warning' | 'danger' | 'critical'
+
+export type LogCategory = 'action' | 'event' | 'system' | 'info' | 'success' | 'warning' | 'danger'
+
 export interface GameState {
   health: number
   hunger: number
@@ -12,7 +16,7 @@ export interface GameState {
 export interface LogEntry {
   id: number
   text: string
-  type: 'action' | 'event' | 'system' | 'good' | 'bad'
+  category: LogCategory
   turn: number
 }
 

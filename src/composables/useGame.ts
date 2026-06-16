@@ -1,5 +1,5 @@
 import { ref, computed, watch } from 'vue'
-import type { GameState, LogEntry, RandomEvent, ActionType, ActionEffect } from '@/types/game'
+import type { GameState, LogEntry, RandomEvent, ActionType, ActionEffect, DangerLevel, LogCategory } from '@/types/game'
 import { randomEvents } from '@/data/events'
 
 const STORAGE_KEY_HIGH_SCORE = 'survival_game_high_score'
@@ -23,6 +23,14 @@ const actionNames: Record<ActionType, string> = {
   drink: '喝水',
 }
 
+const statLabels: Record<string, string> = {
+  health: '生命值',
+  hunger: '饥饿值',
+  thirst: '口渴值',
+  wood: '木材',
+  stone: '石头',
+}
+
 export function useGame() {
   const state = ref<GameState>({
     health: 80,
@@ -37,6 +45,14 @@ export function useGame() {
 
   const highScore = ref<number>(0)
   let logIdCounter = 0
+
+  const previousDangerLevels = ref<Record<string, DangerLevel>>({
+    health: 'safe',
+    hunger: 'safe',
+    thirst: 'safe',
+    wood: 'safe',
+    stone: 'safe',
+  })
 
   const canAct = computed(() => !state.value.isGameOver)
 
@@ -62,11 +78,11 @@ export function useGame() {
     }
   }
 
-  function addLog(text: string, type: LogEntry['type'] = 'action') {
+  function addLog(text: string, category: LogCategory = 'action') {
     state.value.logs.unshift({
       id: ++logIdCounter,
       text,
-      type,
+      category,
       turn: state.value.turn,
     })
     if (state.value.logs.length > 50) {
@@ -76,6 +92,61 @@ export function useGame() {
 
   function clampStat(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value))
+  }
+
+  function getDangerLevel(value: number, max: number, isReverse?: boolean): DangerLevel {
+    const percent = (value / max) * 100
+    if (isReverse) {
+      if (percent >= 95) return 'critical'
+      if (percent >= 85) return 'danger'
+      if (percent >= 70) return 'warning'
+      if (percent >= 50) return 'caution'
+      return 'safe'
+    } else {
+      if (percent <= 5) return 'critical'
+      if (percent <= 15) return 'danger'
+      if (percent <= 30) return 'warning'
+      if (percent <= 50) return 'caution'
+      return 'safe'
+    }
+  }
+
+  function getDangerLevelLabel(level: DangerLevel): string {
+    switch (level) {
+      case 'safe': return '正常'
+      case 'caution': return '注意'
+      case 'warning': return '警告'
+      case 'danger': return '危险'
+      case 'critical': return '危急'
+    }
+  }
+
+  function isWorseOrEqual(newLevel: DangerLevel, oldLevel: DangerLevel): boolean {
+    const order: DangerLevel[] = ['safe', 'caution', 'warning', 'danger', 'critical']
+    return order.indexOf(newLevel) >= order.indexOf(oldLevel)
+  }
+
+  function checkDangerWarnings() {
+    const statConfigs: Array<{ key: keyof GameState; isReverse?: boolean }> = [
+      { key: 'health' },
+      { key: 'hunger', isReverse: true },
+      { key: 'thirst', isReverse: true },
+    ]
+
+    for (const config of statConfigs) {
+      const value = state.value[config.key] as number
+      const currentLevel = getDangerLevel(value, MAX_STAT, config.isReverse)
+      const prevLevel = previousDangerLevels.value[config.key]
+
+      if (currentLevel !== prevLevel && currentLevel !== 'safe' && isWorseOrEqual(currentLevel, prevLevel)) {
+        const label = statLabels[config.key]
+        const levelLabel = getDangerLevelLabel(currentLevel)
+        const category: LogCategory = currentLevel === 'critical' || currentLevel === 'danger' ? 'danger' : 'warning'
+        addLog(`【${levelLabel}】${label}已进入${levelLabel}状态！当前值：${Math.round(value)}`, category)
+      }
+
+      previousDangerLevels.value[config.key] = currentLevel
+    }
   }
 
   function applyEffects(effects: ActionEffect) {
@@ -105,7 +176,11 @@ export function useGame() {
     if (state.value.health <= 0 || state.value.hunger >= MAX_STAT || state.value.thirst >= MAX_STAT) {
       state.value.isGameOver = true
       saveHighScore()
-      addLog('你没能在荒野中生存下来...', 'system')
+      let reason = ''
+      if (state.value.health <= 0) reason = '生命值耗尽'
+      else if (state.value.hunger >= MAX_STAT) reason = '饥饿值达到极限'
+      else if (state.value.thirst >= MAX_STAT) reason = '口渴值达到极限'
+      addLog(`你没能在荒野中生存下来...（${reason}）`, 'danger')
     }
   }
 
@@ -121,6 +196,11 @@ export function useGame() {
     return true
   }
 
+  function formatEffectChange(value: number | undefined): string {
+    if (value === undefined || value === 0) return ''
+    return value > 0 ? `+${value}` : `${value}`
+  }
+
   function performAction(action: ActionType) {
     if (!canPerformAction(action)) return
 
@@ -128,14 +208,22 @@ export function useGame() {
     applyEffects(effects)
     state.value.turn++
 
-    addLog(`第 ${state.value.turn} 回合：${actionNames[action]}`, 'action')
+    const effectParts: string[] = []
+    if (effects.health) effectParts.push(`生命${formatEffectChange(effects.health)}`)
+    if (effects.hunger) effectParts.push(`饥饿${formatEffectChange(effects.hunger)}`)
+    if (effects.thirst) effectParts.push(`口渴${formatEffectChange(effects.thirst)}`)
+    if (effects.wood) effectParts.push(`木材${formatEffectChange(effects.wood)}`)
+    if (effects.stone) effectParts.push(`石头${formatEffectChange(effects.stone)}`)
+    const effectStr = effectParts.length > 0 ? `（${effectParts.join('，')}）` : ''
+    addLog(`执行行动：${actionNames[action]}${effectStr}`, 'action')
 
     const event = getRandomEvent()
     applyEffects(event.effects)
 
-    const eventLogType = event.type === 'good' ? 'good' : event.type === 'bad' ? 'bad' : 'event'
-    addLog(event.text, eventLogType)
+    const eventCategory: LogCategory = event.type === 'good' ? 'success' : event.type === 'bad' ? 'danger' : 'info'
+    addLog(event.text, eventCategory)
 
+    checkDangerWarnings()
     checkGameOver()
   }
 
@@ -167,6 +255,13 @@ export function useGame() {
       logs: [],
     }
     logIdCounter = 0
+    previousDangerLevels.value = {
+      health: 'safe',
+      hunger: 'safe',
+      thirst: 'safe',
+      wood: 'safe',
+      stone: 'safe',
+    }
     addLog('你醒来发现自己身处荒野中，需要想办法生存下去...', 'system')
   }
 
